@@ -1,0 +1,8 @@
+# IDE files
+.idea/
+
+# 3rd party dependencies
+vendor/
+
+# compiled binaries
+hermann
