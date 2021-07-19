@@ -113,12 +113,7 @@ func (c *Consumer) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
 func (c *Consumer) PrintMessageForEveryTopic() {
 	wg := &sync.WaitGroup{}
 	for _, topic := range c.topics {
-		wg.Add(6)
-		go c.printMessageFromTopic(topic, wg)
-		go c.printMessageFromTopic(topic, wg)
-		go c.printMessageFromTopic(topic, wg)
-		go c.printMessageFromTopic(topic, wg)
-		go c.printMessageFromTopic(topic, wg)
+		wg.Add(1)
 		go c.printMessageFromTopic(topic, wg)
 	}
 	wg.Wait()
