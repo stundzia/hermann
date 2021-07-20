@@ -123,6 +123,7 @@ func (c *Consumer) GetTopicMetadata(topic string, partitionDetails bool) *TopicM
 	partitions, err := c.conn.ReadPartitions(topic)
 	if err != nil {
 		fmt.Println("Partition fetch error: ", err)
+		return nil
 	}
 	var replicationFactor int
 
@@ -187,21 +188,20 @@ func (c *Consumer) FindMessageContaining(containing []byte) {
 
 
 func GetTopicMetaAndMessage(address, topic string) (*TopicMetadata, []byte, error) {
-	genConn, _ := kafka.Dial("tcp", address)
-
 	c := &Consumer{
 		conn:    nil,
-		genericConn: genConn,
+		genericConn: nil,
 		topic:   topic,
 		address: address,
 	}
 	c.conn = c.getTopicConn(c.topic)
 
-	msg, err := c.conn.ReadMessage(10e6)
+	tm := c.GetTopicMetadata(topic, true)
+
+	msg, err := c.conn.ReadMessage(10e3)
 	if err != nil {
 		return nil, nil, err
 	}
-	tm := c.GetTopicMetadata(topic, true)
 	return tm, msg.Value, nil
 
 }
