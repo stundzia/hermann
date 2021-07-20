@@ -1,7 +1,6 @@
 package config
 
 import (
-	"flag"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"sync"
@@ -18,7 +17,7 @@ type kafka struct {
 }
 
 
-var configPath = flag.String("config", "conf", "path to the config")
+var configPath = "conf"
 var configInstance *Config
 var once sync.Once
 
@@ -32,7 +31,7 @@ func GetConfig() *Config {
 func setConfig(logger *zap.Logger) {
 	config := viper.New()
 	config.SetConfigName("base")
-	config.AddConfigPath(*configPath)
+	config.AddConfigPath(configPath)
 	err := config.ReadInConfig() // Find and read the config file
 	if err != nil {              // Handle errors reading the config file
 		logger.Fatal("couldn't read config file", zap.Error(err))
