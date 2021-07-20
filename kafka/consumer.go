@@ -139,16 +139,16 @@ func (c *Consumer) GetTopicMetadata(topic string, partitionDetails bool) *TopicM
 		ReplicationFactor: replicationFactor,
 	}
 
-	if partitionDetails {
-		for _, partition := range partitions {
-			fmt.Println(partition.Replicas)
-			fmt.Println(partition.Isr)
-			fmt.Println(partition.Topic)
-			fmt.Println(partition.ID)
-		}
-	}
-	fmt.Printf("Topic %s has %d partitions\n", topic, len(partitions))
-	fmt.Printf("Topic %s has replication factor of %d\n", topic, replicationFactor)
+	//if partitionDetails {
+	//	for _, partition := range partitions {
+	//		fmt.Println(partition.Replicas)
+	//		fmt.Println(partition.Isr)
+	//		fmt.Println(partition.Topic)
+	//		fmt.Println(partition.ID)
+	//	}
+	//}
+	//fmt.Printf("Topic %s has %d partitions\n", topic, len(partitions))
+	//fmt.Printf("Topic %s has replication factor of %d\n", topic, replicationFactor)
 	return tm
 }
 
@@ -199,6 +199,7 @@ func GetTopicMetaAndMessage(address, topic string) (*TopicMetadata, []byte, erro
 		address: address,
 	}
 	c.conn = c.getTopicConn(c.topic)
+	defer c.conn.Close()
 
 	tm := c.GetTopicMetadata(topic, true)
 
