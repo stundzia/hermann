@@ -11,6 +11,7 @@ import (
 	"sync"
 )
 
+// Consumer handles communication with Kafka.
 type Consumer struct {
 	conn *kafka.Conn
 	genericConn *kafka.Conn
@@ -19,6 +20,7 @@ type Consumer struct {
 	address string
 }
 
+// NewConsumer - creates and returns Consumer pointer.
 func NewConsumer() *Consumer {
 	address := config.GetConfig().Kafka.Address
 	topic := config.GetConfig().Kafka.Topic
@@ -52,6 +54,7 @@ func (c *Consumer) getTopicConn(topic string) *kafka.Conn {
 	return conn
 }
 
+// GetControllerConn returns controller connection (controller connection is necessary for topic creation).
 func (c *Consumer) GetControllerConn() *kafka.Conn {
 	broker, err := c.conn.Controller()
 	if err != nil {
@@ -64,6 +67,7 @@ func (c *Consumer) GetControllerConn() *kafka.Conn {
 	return conn
 }
 
+// CreateTopic - creates a topic in the configured cluster.
 func (c *Consumer) CreateTopic(topic string, replicationFactor int, partitionCount int) {
 
 	cc := c.GetControllerConn()
@@ -82,7 +86,7 @@ func (c *Consumer) CreateTopic(topic string, replicationFactor int, partitionCou
 	}
 }
 
-
+// FetchMessage fetches one message from the default consumer topic and returns it's stringified value.
 func (c *Consumer) FetchMessage() (string, error) {
 	msg, err := c.conn.ReadMessage(5000000)
 	if err != nil {
