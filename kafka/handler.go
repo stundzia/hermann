@@ -8,32 +8,33 @@ import (
 	"github.com/segmentio/kafka-go"
 	"github.com/stundzia/hermann/config"
 	"log"
+	"strings"
 	"sync"
 )
 
-// Consumer handles communication with Kafka.
-type Consumer struct {
-	conn *kafka.Conn
+// Handler handles communication with Kafka.
+type Handler struct {
+	conn        *kafka.Conn
 	genericConn *kafka.Conn
-	topic string
-	topics []string
-	address string
+	topic       string
+	topics      []string
+	address     string
 }
 
-// NewConsumer - creates and returns Consumer pointer.
-func NewConsumer() *Consumer {
+// NewHandler - creates and returns Handler pointer.
+func NewHandler() *Handler {
 	address := config.GetConfig().Kafka.Address
 	topic := config.GetConfig().Kafka.Topic
 	topics := config.GetConfig().Kafka.Topics
 
 	genConn, _ := kafka.Dial("tcp", address)
 
-	c := &Consumer{
-		conn:    nil,
+	c := &Handler{
+		conn:        nil,
 		genericConn: genConn,
-		topic:   topic,
-		topics: topics,
-		address: address,
+		topic:       topic,
+		topics:      topics,
+		address:     address,
 	}
 	c.conn = c.getTopicConn(c.topic)
 	fmt.Println("topics: ", topics)
@@ -41,11 +42,38 @@ func NewConsumer() *Consumer {
 	return c
 }
 
-func (c *Consumer) setConn() {
+func NewHandlerWithParamsAndReader(address string, topic string) *Handler {
+
+	genConn, _ := kafka.Dial("tcp", address)
+
+	c := &Handler{
+		conn:        nil,
+		genericConn: genConn,
+		topic:       topic,
+		address:     address,
+	}
+	c.conn = c.getTopicConn(c.topic)
+	fmt.Println("topic: ", topic)
+	return c
+}
+
+func GetKafkaReader(topic, groupID string) *kafka.Reader {
+	address := config.GetConfig().Kafka.Address
+	brokers := strings.Split(address, ",")
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  brokers,
+		GroupID:  groupID,
+		Topic:    topic,
+		MinBytes: 10e3, // 10KB
+		MaxBytes: 10e6, // 10MB
+	})
+}
+
+func (c *Handler) setConn() {
 	c.conn = c.getTopicConn(c.topic)
 }
 
-func (c *Consumer) getTopicConn(topic string) *kafka.Conn {
+func (c *Handler) getTopicConn(topic string) *kafka.Conn {
 	partition := 0
 	conn, err := kafka.DialLeader(context.Background(), "tcp", c.address, topic, partition)
 	if err != nil {
@@ -55,7 +83,7 @@ func (c *Consumer) getTopicConn(topic string) *kafka.Conn {
 }
 
 // GetControllerConn returns controller connection (controller connection is necessary for topic creation).
-func (c *Consumer) GetControllerConn() *kafka.Conn {
+func (c *Handler) GetControllerConn() *kafka.Conn {
 	broker, err := c.conn.Controller()
 	if err != nil {
 		fmt.Println("Failed to get controller: ", err)
@@ -68,7 +96,7 @@ func (c *Consumer) GetControllerConn() *kafka.Conn {
 }
 
 // CreateTopic - creates a topic in the configured cluster.
-func (c *Consumer) CreateTopic(topic string, replicationFactor int, partitionCount int) {
+func (c *Handler) CreateTopic(topic string, replicationFactor int, partitionCount int) {
 
 	cc := c.GetControllerConn()
 	if cc == nil {
@@ -87,7 +115,7 @@ func (c *Consumer) CreateTopic(topic string, replicationFactor int, partitionCou
 }
 
 // FetchMessage fetches one message from the default consumer topic and returns it's stringified value.
-func (c *Consumer) FetchMessage() (string, error) {
+func (c *Handler) FetchMessage() (string, error) {
 	msg, err := c.conn.ReadMessage(5000000)
 	if err != nil {
 		return "", err
@@ -95,7 +123,18 @@ func (c *Consumer) FetchMessage() (string, error) {
 	return string(msg.Value), nil
 }
 
-func (c *Consumer) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
+// WriteMessage writes a message to provided topic
+func (c *Handler) WriteMessage(topic string, value []byte) error {
+	msg := kafka.Message{
+		Topic: topic,
+		Value: value,
+	}
+	n, err := c.conn.WriteMessages(msg)
+	fmt.Println(n, err)
+	return err
+}
+
+func (c *Handler) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
 	conn := c.getTopicConn(topic)
 	msg, err := conn.ReadMessage(5000000)
 	if err != nil {
@@ -114,7 +153,7 @@ func (c *Consumer) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func (c *Consumer) PrintMessageForEveryTopic() {
+func (c *Handler) PrintMessageForEveryTopic() {
 	wg := &sync.WaitGroup{}
 	for _, topic := range c.topics {
 		wg.Add(1)
@@ -123,7 +162,7 @@ func (c *Consumer) PrintMessageForEveryTopic() {
 	wg.Wait()
 }
 
-func (c *Consumer) GetTopicMetadata(topic string, partitionDetails bool) *TopicMetadata {
+func (c *Handler) GetTopicMetadata(topic string, partitionDetails bool) *TopicMetadata {
 	partitions, err := c.conn.ReadPartitions(topic)
 	if err != nil {
 		fmt.Println("Partition fetch error: ", err)
@@ -134,8 +173,8 @@ func (c *Consumer) GetTopicMetadata(topic string, partitionDetails bool) *TopicM
 	replicationFactor = len(partitions[0].Replicas)
 
 	tm := &TopicMetadata{
-		Topic:      topic,
-		Partitions: len(partitions),
+		Topic:             topic,
+		Partitions:        len(partitions),
 		ReplicationFactor: replicationFactor,
 	}
 
@@ -151,7 +190,6 @@ func (c *Consumer) GetTopicMetadata(topic string, partitionDetails bool) *TopicM
 	//fmt.Printf("Topic %s has replication factor of %d\n", topic, replicationFactor)
 	return tm
 }
-
 
 func printIfContains(msg kafka.Message, containing []byte) {
 	if bytes.Contains(msg.Value, containing) {
@@ -170,12 +208,12 @@ func printIfContains(msg kafka.Message, containing []byte) {
 	}
 }
 
-func (c *Consumer) FindMessageContaining(containing []byte) {
+func (c *Handler) FindMessageContaining(containing []byte) {
 	consumedCount := 0
-	for ;; {
+	for {
 		batch := c.conn.ReadBatch(900000, 9000000)
 		fmt.Println("offset: ", batch.Offset())
-		for ;; {
+		for {
 			msg, err := batch.ReadMessage()
 			consumedCount++
 			if batch.Err() != nil || err != nil || msg.Value == nil {
@@ -183,31 +221,34 @@ func (c *Consumer) FindMessageContaining(containing []byte) {
 				break
 			}
 			go printIfContains(msg, containing)
-			if consumedCount > 0 && consumedCount % 10000 == 0 {
+			if consumedCount > 0 && consumedCount%10000 == 0 {
 				fmt.Printf("Checked %d messages\n", consumedCount)
 			}
 		}
 	}
 }
 
-
-func GetTopicMetaAndMessage(address, topic string) (*TopicMetadata, []byte, error) {
-	c := &Consumer{
-		conn:    nil,
+func GetTopicMetaAndMessage(address, topic string) (*TopicMetadata, kafka.Message, error) {
+	c := &Handler{
+		conn:        nil,
 		genericConn: nil,
-		topic:   topic,
-		address: address,
+		topic:       topic,
+		address:     address,
 	}
 	c.conn = c.getTopicConn(c.topic)
-	c.conn.Seek(0, kafka.SeekEnd)
+	//_, err := c.conn.Seek(0, kafka.SeekEnd)
+	//if err != nil {
+	//	fmt.Println("Seek error: ", err)
+	//}
 	defer c.conn.Close()
 
 	tm := c.GetTopicMetadata(topic, true)
 
-	msg, err := c.conn.ReadMessage(10e3)
+	msg, err := c.conn.ReadMessage(10e5)
+	fmt.Println("msgggg: ", msg)
 	if err != nil {
-		return nil, nil, err
+		return nil, kafka.Message{}, err
 	}
-	return tm, msg.Value, nil
+	return tm, msg, nil
 
 }
