@@ -43,7 +43,6 @@ func NewHandler() *Handler {
 }
 
 func NewHandlerWithParamsAndReader(address string, topic string) *Handler {
-
 	genConn, _ := kafka.Dial("tcp", address)
 
 	c := &Handler{
@@ -212,7 +211,6 @@ func (c *Handler) FindMessageContaining(containing []byte) {
 	consumedCount := 0
 	for {
 		batch := c.conn.ReadBatch(900000, 9000000)
-		fmt.Println("offset: ", batch.Offset())
 		for {
 			msg, err := batch.ReadMessage()
 			consumedCount++
@@ -236,19 +234,14 @@ func GetTopicMetaAndMessage(address, topic string) (*TopicMetadata, kafka.Messag
 		address:     address,
 	}
 	c.conn = c.getTopicConn(c.topic)
-	//_, err := c.conn.Seek(0, kafka.SeekEnd)
-	//if err != nil {
-	//	fmt.Println("Seek error: ", err)
-	//}
 	defer c.conn.Close()
 
 	tm := c.GetTopicMetadata(topic, true)
 
 	msg, err := c.conn.ReadMessage(10e5)
-	fmt.Println("msgggg: ", msg)
 	if err != nil {
 		return nil, kafka.Message{}, err
 	}
-	return tm, msg, nil
 
+	return tm, msg, nil
 }
