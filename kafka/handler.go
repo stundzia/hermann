@@ -23,7 +23,7 @@ type Handler struct {
 }
 
 // NewHandler - creates and returns Handler pointer.
-func NewHandler() *Handler {
+func NewHandler() (*Handler, error) {
 	address := config.GetConfig().Kafka.Address
 	topic := config.GetConfig().Kafka.Topic
 	topics := config.GetConfig().Kafka.Topics
@@ -38,24 +38,12 @@ func NewHandler() *Handler {
 		topicConns:  map[string]*kafka.Conn{},
 		address:     address,
 	}
-	c.conn = c.getTopicConn(c.topic)
-	fmt.Println("topics: ", topics)
-	fmt.Println("topic: ", topic)
-	return c
-}
-
-func NewHandlerWithParamsAndReader(address string, topic string) *Handler {
-	genConn, _ := kafka.Dial("tcp", address)
-
-	c := &Handler{
-		conn:        nil,
-		genericConn: genConn,
-		topic:       topic,
-		address:     address,
+	err := c.setConn()
+	if err != nil {
+		return nil, err
 	}
-	c.conn = c.getTopicConn(c.topic)
-	fmt.Println("topic: ", topic)
-	return c
+
+	return c, nil
 }
 
 func GetKafkaReader(topic, groupID string) *kafka.Reader {
@@ -70,26 +58,28 @@ func GetKafkaReader(topic, groupID string) *kafka.Reader {
 	})
 }
 
-func (c *Handler) setConn() {
-	c.conn = c.getTopicConn(c.topic)
+func (h *Handler) setConn() error {
+	conn, err := kafka.Dial("tcp", h.address)
+	h.conn = conn
+	return err
 }
 
-func (c *Handler) getTopicConn(topic string) *kafka.Conn {
-	if conn, exists := c.topicConns[topic]; exists {
+func (h *Handler) getTopicConn(topic string) *kafka.Conn {
+	if conn, exists := h.topicConns[topic]; exists {
 		return conn
 	}
 	partition := 0
-	conn, err := kafka.DialLeader(context.Background(), "tcp", c.address, topic, partition)
+	conn, err := kafka.DialLeader(context.Background(), "tcp", h.address, topic, partition)
 	if err != nil {
 		log.Fatal("failed to dial leader:", err)
 	}
-	c.topicConns[topic] = conn
+	h.topicConns[topic] = conn
 	return conn
 }
 
 // GetControllerConn returns controller connection (controller connection is necessary for topic creation).
-func (c *Handler) GetControllerConn() *kafka.Conn {
-	broker, err := c.conn.Controller()
+func (h *Handler) GetControllerConn() *kafka.Conn {
+	broker, err := h.conn.Controller()
 	if err != nil {
 		fmt.Println("Failed to get controller: ", err)
 	}
@@ -101,9 +91,9 @@ func (c *Handler) GetControllerConn() *kafka.Conn {
 }
 
 // CreateTopic - creates a topic in the configured cluster.
-func (c *Handler) CreateTopic(topic string, replicationFactor int, partitionCount int) {
+func (h *Handler) CreateTopic(topic string, replicationFactor int, partitionCount int) {
 
-	cc := c.GetControllerConn()
+	cc := h.GetControllerConn()
 	if cc == nil {
 		return
 	}
@@ -158,11 +148,11 @@ func (h *Handler) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func (c *Handler) PrintMessageForEveryTopic() {
+func (h *Handler) PrintMessageForEveryTopic() {
 	wg := &sync.WaitGroup{}
-	for _, topic := range c.topics {
+	for _, topic := range h.topics {
 		wg.Add(1)
-		go c.printMessageFromTopic(topic, wg)
+		go h.printMessageFromTopic(topic, wg)
 	}
 	wg.Wait()
 }
