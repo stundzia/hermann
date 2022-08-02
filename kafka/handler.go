@@ -7,12 +7,9 @@ import (
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"github.com/stundzia/hermann/config"
-	"io"
 	"log"
-	"net"
 	"strings"
 	"sync"
-	"syscall"
 )
 
 // Handler handles communication with Kafka.
@@ -67,11 +64,9 @@ func (h *Handler) setConn() error {
 	return err
 }
 
-func (h *Handler) getTopicConn(topic string) *kafka.Conn {
-	if conn, exists := h.topicConns[topic]; exists {
-		if err := connCheck(conn); err == nil {
-			return conn
-		}
+func (h *Handler) getTopicConn(topic string, restart bool) *kafka.Conn {
+	if conn, exists := h.topicConns[topic]; exists && !restart {
+		return conn
 	}
 	partition := 0
 	conn, err := kafka.DialLeader(context.Background(), "tcp", h.address, topic, partition)
@@ -135,7 +130,7 @@ func (h *Handler) WriteMessage(topic string, value []byte) error {
 }
 
 func (h *Handler) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
-	conn := h.getTopicConn(topic)
+	conn := h.getTopicConn(topic, false)
 	msg, err := conn.ReadMessage(5000000)
 	if err != nil {
 		fmt.Println("Message read error: ", err)
@@ -162,11 +157,11 @@ func (h *Handler) PrintMessageForEveryTopic() {
 	wg.Wait()
 }
 
-func (h *Handler) GetTopicMetadata(topic string, partitionDetails bool) *TopicMetadata {
-	partitions, err := h.conn.ReadPartitions(topic)
+func (h *Handler) GetTopicMetadata(topic string, partitionDetails bool) (*TopicMetadata, error) {
+	partitions, err := h.getTopicConn(topic, false).ReadPartitions(topic)
 	if err != nil {
 		fmt.Println("Partition fetch error: ", err)
-		return nil
+		return nil, err
 	}
 	var replicationFactor int
 
@@ -188,7 +183,7 @@ func (h *Handler) GetTopicMetadata(topic string, partitionDetails bool) *TopicMe
 	//}
 	//fmt.Printf("Topic %s has %d partitions\n", topic, len(partitions))
 	//fmt.Printf("Topic %s has replication factor of %d\n", topic, replicationFactor)
-	return tm
+	return tm, nil
 }
 
 func printIfContains(msg kafka.Message, containing []byte) {
@@ -228,9 +223,16 @@ func (h *Handler) FindMessageContaining(containing []byte) {
 }
 
 func (h *Handler) GetTopicMetaAndMessage(topic string) (*TopicMetadata, kafka.Message, error) {
-	conn := h.getTopicConn(topic)
+	conn := h.getTopicConn(topic, false)
 
-	tm := h.GetTopicMetadata(topic, true)
+	tm, err := h.GetTopicMetadata(topic, true)
+	if err != nil {
+		conn = h.getTopicConn(topic, true)
+		tm, err = h.GetTopicMetadata(topic, true)
+		if err != nil {
+			return nil, kafka.Message{}, err
+		}
+	}
 
 	msg, err := conn.ReadMessage(10e5)
 	if err != nil {
@@ -238,30 +240,4 @@ func (h *Handler) GetTopicMetaAndMessage(topic string) (*TopicMetadata, kafka.Me
 	}
 
 	return tm, msg, nil
-}
-
-func connCheck(conn net.Conn) error {
-	var sysErr error = nil
-	rc, err := conn.(syscall.Conn).SyscallConn()
-	if err != nil {
-		return err
-	}
-	err = rc.Read(func(fd uintptr) bool {
-		var buf []byte = []byte{0}
-		n, _, err := syscall.Recvfrom(int(fd), buf, syscall.MSG_PEEK|syscall.MSG_DONTWAIT)
-		switch {
-		case n == 0 && err == nil:
-			sysErr = io.EOF
-		case err == syscall.EAGAIN || err == syscall.EWOULDBLOCK:
-			sysErr = nil
-		default:
-			sysErr = err
-		}
-		return true
-	})
-	if err != nil {
-		return err
-	}
-
-	return sysErr
 }
