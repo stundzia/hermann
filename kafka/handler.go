@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"github.com/stundzia/hermann/config"
+	"io"
 	"log"
+	"net"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // Handler handles communication with Kafka.
@@ -66,7 +69,9 @@ func (h *Handler) setConn() error {
 
 func (h *Handler) getTopicConn(topic string) *kafka.Conn {
 	if conn, exists := h.topicConns[topic]; exists {
-		return conn
+		if err := connCheck(conn); err == nil {
+			return conn
+		}
 	}
 	partition := 0
 	conn, err := kafka.DialLeader(context.Background(), "tcp", h.address, topic, partition)
@@ -233,4 +238,30 @@ func (h *Handler) GetTopicMetaAndMessage(topic string) (*TopicMetadata, kafka.Me
 	}
 
 	return tm, msg, nil
+}
+
+func connCheck(conn net.Conn) error {
+	var sysErr error = nil
+	rc, err := conn.(syscall.Conn).SyscallConn()
+	if err != nil {
+		return err
+	}
+	err = rc.Read(func(fd uintptr) bool {
+		var buf []byte = []byte{0}
+		n, _, err := syscall.Recvfrom(int(fd), buf, syscall.MSG_PEEK|syscall.MSG_DONTWAIT)
+		switch {
+		case n == 0 && err == nil:
+			sysErr = io.EOF
+		case err == syscall.EAGAIN || err == syscall.EWOULDBLOCK:
+			sysErr = nil
+		default:
+			sysErr = err
+		}
+		return true
+	})
+	if err != nil {
+		return err
+	}
+
+	return sysErr
 }
