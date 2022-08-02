@@ -4,5 +4,8 @@
 # 3rd party dependencies
 vendor/
 
+# adhoc stuff
+adhoc/
+
 # compiled binaries
 hermann

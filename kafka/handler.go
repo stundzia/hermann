@@ -18,6 +18,7 @@ type Handler struct {
 	genericConn *kafka.Conn
 	topic       string
 	topics      []string
+	topicConns  map[string]*kafka.Conn
 	address     string
 }
 
@@ -34,6 +35,7 @@ func NewHandler() *Handler {
 		genericConn: genConn,
 		topic:       topic,
 		topics:      topics,
+		topicConns:  map[string]*kafka.Conn{},
 		address:     address,
 	}
 	c.conn = c.getTopicConn(c.topic)
@@ -73,11 +75,15 @@ func (c *Handler) setConn() {
 }
 
 func (c *Handler) getTopicConn(topic string) *kafka.Conn {
+	if conn, exists := c.topicConns[topic]; exists {
+		return conn
+	}
 	partition := 0
 	conn, err := kafka.DialLeader(context.Background(), "tcp", c.address, topic, partition)
 	if err != nil {
 		log.Fatal("failed to dial leader:", err)
 	}
+	c.topicConns[topic] = conn
 	return conn
 }
 
@@ -114,8 +120,8 @@ func (c *Handler) CreateTopic(topic string, replicationFactor int, partitionCoun
 }
 
 // FetchMessage fetches one message from the default consumer topic and returns it's stringified value.
-func (c *Handler) FetchMessage() (string, error) {
-	msg, err := c.conn.ReadMessage(5000000)
+func (h *Handler) FetchMessage() (string, error) {
+	msg, err := h.conn.ReadMessage(5000000)
 	if err != nil {
 		return "", err
 	}
@@ -123,18 +129,18 @@ func (c *Handler) FetchMessage() (string, error) {
 }
 
 // WriteMessage writes a message to provided topic
-func (c *Handler) WriteMessage(topic string, value []byte) error {
+func (h *Handler) WriteMessage(topic string, value []byte) error {
 	msg := kafka.Message{
 		Topic: topic,
 		Value: value,
 	}
-	n, err := c.conn.WriteMessages(msg)
+	n, err := h.conn.WriteMessages(msg)
 	fmt.Println(n, err)
 	return err
 }
 
-func (c *Handler) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
-	conn := c.getTopicConn(topic)
+func (h *Handler) printMessageFromTopic(topic string, wg *sync.WaitGroup) {
+	conn := h.getTopicConn(topic)
 	msg, err := conn.ReadMessage(5000000)
 	if err != nil {
 		fmt.Println("Message read error: ", err)
@@ -161,8 +167,8 @@ func (c *Handler) PrintMessageForEveryTopic() {
 	wg.Wait()
 }
 
-func (c *Handler) GetTopicMetadata(topic string, partitionDetails bool) *TopicMetadata {
-	partitions, err := c.conn.ReadPartitions(topic)
+func (h *Handler) GetTopicMetadata(topic string, partitionDetails bool) *TopicMetadata {
+	partitions, err := h.conn.ReadPartitions(topic)
 	if err != nil {
 		fmt.Println("Partition fetch error: ", err)
 		return nil
@@ -207,10 +213,10 @@ func printIfContains(msg kafka.Message, containing []byte) {
 	}
 }
 
-func (c *Handler) FindMessageContaining(containing []byte) {
+func (h *Handler) FindMessageContaining(containing []byte) {
 	consumedCount := 0
 	for {
-		batch := c.conn.ReadBatch(900000, 9000000)
+		batch := h.conn.ReadBatch(900000, 9000000)
 		for {
 			msg, err := batch.ReadMessage()
 			consumedCount++
@@ -226,19 +232,12 @@ func (c *Handler) FindMessageContaining(containing []byte) {
 	}
 }
 
-func GetTopicMetaAndMessage(address, topic string) (*TopicMetadata, kafka.Message, error) {
-	c := &Handler{
-		conn:        nil,
-		genericConn: nil,
-		topic:       topic,
-		address:     address,
-	}
-	c.conn = c.getTopicConn(c.topic)
-	defer c.conn.Close()
+func (h *Handler) GetTopicMetaAndMessage(topic string) (*TopicMetadata, kafka.Message, error) {
+	conn := h.getTopicConn(topic)
 
-	tm := c.GetTopicMetadata(topic, true)
+	tm := h.GetTopicMetadata(topic, true)
 
-	msg, err := c.conn.ReadMessage(10e5)
+	msg, err := conn.ReadMessage(10e5)
 	if err != nil {
 		return nil, kafka.Message{}, err
 	}

@@ -12,10 +12,9 @@ type Config struct {
 
 type kafka struct {
 	Address string
-	Topic string
-	Topics []string
+	Topic   string
+	Topics  []string
 }
-
 
 var configPath = "conf"
 var configInstance *Config
