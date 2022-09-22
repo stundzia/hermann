@@ -5,11 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/segmentio/kafka-go"
-	"github.com/stundzia/hermann/config"
 	"log"
 	"strings"
 	"sync"
+
+	"github.com/segmentio/kafka-go"
+	"github.com/stundzia/hermann/config"
+)
+
+const (
+	ContainTypeAll = iota
+	ContainTypeAny
 )
 
 // Handler handles communication with Kafka.
@@ -29,7 +35,6 @@ func NewHandler() (*Handler, error) {
 	topics := config.GetConfig().Kafka.Topics
 
 	genConn, _ := kafka.Dial("tcp", address)
-
 	c := &Handler{
 		conn:        nil,
 		genericConn: genConn,
@@ -118,6 +123,15 @@ func (h *Handler) FetchMessage() (string, error) {
 	return string(msg.Value), nil
 }
 
+func (h *Handler) FetchMessageFromTopic(topic string) (string, error) {
+	conn := h.getTopicConn(topic, true)
+	msg, err := conn.ReadMessage(5000000)
+	if err != nil {
+		return "", err
+	}
+	return string(msg.Value), nil
+}
+
 // WriteMessage writes a message to provided topic
 func (h *Handler) WriteMessage(topic string, value []byte) error {
 	msg := kafka.Message{
@@ -173,48 +187,82 @@ func (h *Handler) GetTopicMetadata(topic string, partitionDetails bool) (*TopicM
 		ReplicationFactor: replicationFactor,
 	}
 
-	//if partitionDetails {
-	//	for _, partition := range partitions {
-	//		fmt.Println(partition.Replicas)
-	//		fmt.Println(partition.Isr)
-	//		fmt.Println(partition.Topic)
-	//		fmt.Println(partition.ID)
-	//	}
-	//}
-	//fmt.Printf("Topic %s has %d partitions\n", topic, len(partitions))
-	//fmt.Printf("Topic %s has replication factor of %d\n", topic, replicationFactor)
+	if partitionDetails {
+		for _, partition := range partitions {
+			fmt.Println(partition.Replicas)
+			fmt.Println(partition.Isr)
+			fmt.Println(partition.Topic)
+			fmt.Println(partition.ID)
+		}
+		fmt.Printf("Topic %s has %d partitions\n", topic, len(partitions))
+		fmt.Printf("Topic %s has replication factor of %d\n", topic, replicationFactor)
+	}
 	return tm, nil
 }
 
-func printIfContains(msg kafka.Message, containing []byte) {
-	if bytes.Contains(msg.Value, containing) {
-		valInt := map[string]interface{}{}
-		err := json.Unmarshal(msg.Value, &valInt)
-		if err != nil {
-			fmt.Println("Error: ", err)
+func printIfContains(msg kafka.Message, containing [][]byte) {
+	for _, contain := range containing {
+		if !bytes.Contains(msg.Value, contain) {
 			return
 		}
-		prettyVal, _ := json.MarshalIndent(valInt, "", "\t")
-		if len(valInt) != 0 {
-			fmt.Printf("------\n%s\n", prettyVal)
-		} else {
-			fmt.Printf("------\n%s\n", string(msg.Value))
-		}
+	}
+	valInt := map[string]interface{}{}
+	err := json.Unmarshal(msg.Value, &valInt)
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return
+	}
+	prettyVal, _ := json.MarshalIndent(valInt, "", "\t")
+	if len(valInt) != 0 {
+		fmt.Printf("------\n%s\n", prettyVal)
+	} else {
+		fmt.Printf("------\n%s\n", string(msg.Value))
 	}
 }
 
-func (h *Handler) FindMessageContaining(containing []byte) {
+func returnIfContainsAll(msg kafka.Message, containing [][]byte) ([]byte, bool) {
+	for _, contain := range containing {
+		if !bytes.Contains(msg.Value, contain) {
+			return []byte{}, false
+		}
+	}
+	return msg.Value, true
+}
+
+func returnIfContainsAny(msg kafka.Message, containing [][]byte) ([]byte, bool) {
+	for _, contain := range containing {
+		if bytes.Contains(msg.Value, contain) {
+			return msg.Value, true
+		}
+	}
+	return []byte{}, false
+}
+
+func (h *Handler) FindMessageContaining(topic string, containing [][]byte, containType int) []byte {
 	consumedCount := 0
+	conn := h.getTopicConn(topic, true)
 	for {
-		batch := h.conn.ReadBatch(900000, 9000000)
+		batch := conn.ReadBatch(900000, 9000000)
 		for {
 			msg, err := batch.ReadMessage()
+			if err != nil {
+				fmt.Println("err: ", err)
+			}
 			consumedCount++
 			if batch.Err() != nil || err != nil || msg.Value == nil {
 				_ = batch.Close()
 				break
 			}
-			go printIfContains(msg, containing)
+			if containType == ContainTypeAll {
+				if res, contains := returnIfContainsAll(msg, containing); contains {
+					return res
+				}
+			}
+			if containType == ContainTypeAny {
+				if res, contains := returnIfContainsAll(msg, containing); contains {
+					return res
+				}
+			}
 			if consumedCount > 0 && consumedCount%10000 == 0 {
 				fmt.Printf("Checked %d messages\n", consumedCount)
 			}
