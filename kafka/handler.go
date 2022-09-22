@@ -238,36 +238,36 @@ func returnIfContainsAny(msg kafka.Message, containing [][]byte) ([]byte, bool) 
 	return []byte{}, false
 }
 
-func (h *Handler) FindMessageContaining(topic string, containing [][]byte, containType int) []byte {
-	consumedCount := 0
+func (h *Handler) FindMessageContaining(topic string, containing [][]byte, containType int, limit int) ([]byte, bool) {
 	conn := h.getTopicConn(topic, true)
-	for {
+	for searched := 0; searched < limit; {
 		batch := conn.ReadBatch(900000, 9000000)
 		for {
 			msg, err := batch.ReadMessage()
 			if err != nil {
 				fmt.Println("err: ", err)
 			}
-			consumedCount++
+			searched++
 			if batch.Err() != nil || err != nil || msg.Value == nil {
 				_ = batch.Close()
 				break
 			}
 			if containType == ContainTypeAll {
 				if res, contains := returnIfContainsAll(msg, containing); contains {
-					return res
+					return res, true
 				}
 			}
 			if containType == ContainTypeAny {
 				if res, contains := returnIfContainsAll(msg, containing); contains {
-					return res
+					return res, true
 				}
 			}
-			if consumedCount > 0 && consumedCount%10000 == 0 {
-				fmt.Printf("Checked %d messages\n", consumedCount)
+			if searched > 0 && searched%10000 == 0 {
+				fmt.Printf("Checked %d messages\n", searched)
 			}
 		}
 	}
+	return []byte{}, false
 }
 
 func (h *Handler) GetTopicMetaAndMessage(topic string) (*TopicMetadata, kafka.Message, error) {
