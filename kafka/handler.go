@@ -242,6 +242,7 @@ func (h *Handler) FindMessagesContaining(topic string, containing [][]byte, cont
 	conn := h.getTopicConn(topic, true)
 	foundMessages := make([][]byte, limitFind)
 	found := 0
+Main:
 	for searched := 0; searched < limitSearch; {
 		batch := conn.ReadBatch(900000, 9000000)
 		for {
@@ -259,7 +260,7 @@ func (h *Handler) FindMessagesContaining(topic string, containing [][]byte, cont
 					foundMessages = append(foundMessages, res)
 					found++
 					if found >= limitFind {
-						break
+						break Main
 					}
 				}
 			}
@@ -268,7 +269,7 @@ func (h *Handler) FindMessagesContaining(topic string, containing [][]byte, cont
 					foundMessages = append(foundMessages, res)
 					found++
 					if found >= limitFind {
-						break
+						break Main
 					}
 				}
 			}
