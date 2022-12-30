@@ -240,7 +240,7 @@ func returnIfContainsAny(msg kafka.Message, containing [][]byte) ([]byte, bool) 
 
 func (h *Handler) FindMessagesContaining(topic string, containing [][]byte, containType, limitSearch, limitFind int) ([][]byte, bool) {
 	conn := h.getTopicConn(topic, true)
-	foundMessages := make([][]byte, limitFind)
+	foundMessages := make([][]byte, 0)
 	found := 0
 Main:
 	for searched := 0; searched < limitSearch; {
