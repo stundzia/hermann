@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 	"github.com/stundzia/hermann/config"
@@ -242,6 +243,8 @@ func (h *Handler) FindMessagesContaining(topic string, containing [][]byte, cont
 	conn := h.getTopicConn(topic, true)
 	foundMessages := make([][]byte, 0)
 	found := 0
+	offset, _ := conn.ReadOffset(time.Now().Add(-20 * time.Minute))
+	_, _ = conn.Seek(offset, kafka.SeekAbsolute)
 Main:
 	for searched := 0; searched < limitSearch; {
 		batch := conn.ReadBatch(900000, 9000000)
