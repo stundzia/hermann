@@ -268,7 +268,7 @@ Main:
 				}
 			}
 			if containType == ContainTypeAny {
-				if res, contains := returnIfContainsAll(msg, containing); contains {
+				if res, contains := returnIfContainsAny(msg, containing); contains {
 					foundMessages = append(foundMessages, res)
 					found++
 					if found >= limitFind {
@@ -282,6 +282,37 @@ Main:
 		}
 	}
 	return foundMessages, found > 0
+}
+
+func (h *Handler) FindMessagesContainingV2(topic string, containing [][]byte, containType, limitSearch, limitFind int, rewind time.Duration) ([][]byte, bool) {
+	start := time.Now()
+	conn := h.getTopicConn(topic, true)
+	offset, _ := conn.ReadOffset(time.Now().Add(-rewind))
+	_, _ = conn.Seek(offset, kafka.SeekAbsolute)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	f := newFinder(limitFind, limitSearch, containType, containing, cancel)
+
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("Searched: ", f.checked.Load(), " Found: ", f.found.Load(), " in ", time.Now().Sub(start).Seconds(), " seconds")
+			return f.res, f.found.Load() >= uint32(limitFind)
+		default:
+			batch := conn.ReadBatch(900000, 9000000)
+			for {
+				msg, err := batch.ReadMessage()
+				if err != nil {
+					fmt.Println("err: ", err)
+				}
+				if batch.Err() != nil || err != nil || msg.Value == nil {
+					_ = batch.Close()
+					break
+				}
+				go f.handle(msg.Value)
+			}
+		}
+	}
 }
 
 func (h *Handler) GetTopicMetaAndMessage(topic string) (*TopicMetadata, kafka.Message, error) {
