@@ -3,36 +3,39 @@ package kafka
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type finder struct {
-	cancel      context.CancelFunc
-	found       atomic.Uint32
-	checked     atomic.Uint64
-	limitSearch uint64
-	limitFind   uint32
-	containing  [][]byte
-	containType int
-	res         [][]byte
-	mux         *sync.Mutex
-	wg          *sync.WaitGroup
+	cancel        context.CancelFunc
+	found         atomic.Uint32
+	checked       atomic.Uint64
+	limitSearch   uint64
+	limitFind     uint32
+	limitTimeSecs int
+	containing    [][]byte
+	containType   int
+	res           [][]byte
+	mux           *sync.Mutex
+	wg            *sync.WaitGroup
 }
 
-func newFinder(findLimit, searchLimit, containType int, containing [][]byte, cancelFunc context.CancelFunc) *finder {
+func newFinder(findLimit, searchLimit, containType int, containing [][]byte, timeLimitSeconds int, cancelFunc context.CancelFunc) *finder {
 	f := &finder{
-		cancel:      cancelFunc,
-		found:       atomic.Uint32{},
-		checked:     atomic.Uint64{},
-		limitSearch: uint64(searchLimit),
-		limitFind:   uint32(findLimit),
-		containing:  containing,
-		containType: containType,
-		res:         make([][]byte, 0),
-		mux:         &sync.Mutex{},
-		wg:          &sync.WaitGroup{},
+		cancel:        cancelFunc,
+		found:         atomic.Uint32{},
+		checked:       atomic.Uint64{},
+		limitSearch:   uint64(searchLimit),
+		limitFind:     uint32(findLimit),
+		limitTimeSecs: timeLimitSeconds,
+		containing:    containing,
+		containType:   containType,
+		res:           make([][]byte, 0),
+		mux:           &sync.Mutex{},
+		wg:            &sync.WaitGroup{},
 	}
 	go f.statusChecker()
 
@@ -40,11 +43,14 @@ func newFinder(findLimit, searchLimit, containType int, containing [][]byte, can
 }
 
 func (f *finder) statusChecker() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(3 * time.Second)
+	start := time.Now()
 
 	for {
 		<-ticker.C
-		if f.found.Load() >= f.limitFind || f.checked.Load() >= f.limitSearch {
+		fmt.Println("Found: ", f.found.Load())
+		fmt.Println("Checked: ", f.checked.Load())
+		if f.found.Load() >= f.limitFind || f.checked.Load() >= f.limitSearch || start.Add(time.Second*time.Duration(f.limitTimeSecs)).Before(time.Now()) {
 			f.cancel()
 			return
 		}

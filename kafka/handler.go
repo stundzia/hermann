@@ -284,14 +284,14 @@ Main:
 	return foundMessages, found > 0
 }
 
-func (h *Handler) FindMessagesContainingV2(topic string, containing [][]byte, containType, limitSearch, limitFind int, rewind time.Duration) ([][]byte, bool) {
+func (h *Handler) FindMessagesContainingV2(topic string, containing [][]byte, containType, limitSearch, limitFind, limitTimeSecs int, rewind time.Duration) ([][]byte, bool) {
 	start := time.Now()
 	conn := h.getTopicConn(topic, true)
 	offset, _ := conn.ReadOffset(time.Now().Add(-rewind))
 	_, _ = conn.Seek(offset, kafka.SeekAbsolute)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	f := newFinder(limitFind, limitSearch, containType, containing, cancel)
+	f := newFinder(limitFind, limitSearch, containType, containing, limitTimeSecs, cancel)
 
 	for {
 		select {
