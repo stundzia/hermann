@@ -284,7 +284,7 @@ Main:
 	return foundMessages, found > 0
 }
 
-func (h *Handler) FindMessagesContainingV2(topic string, containing [][]byte, containType, limitSearch, limitFind, limitTimeSecs int, rewind time.Duration) ([][]byte, bool) {
+func (h *Handler) FindMessagesContainingV2(topic string, containing [][]byte, containType, limitSearch, limitFind, limitTimeSecs int, rewind time.Duration, minBytes, maxBytes int) ([][]byte, bool) {
 	start := time.Now()
 	conn := h.getTopicConn(topic, true)
 	offset, _ := conn.ReadOffset(time.Now().Add(-rewind))
@@ -299,7 +299,7 @@ func (h *Handler) FindMessagesContainingV2(topic string, containing [][]byte, co
 			fmt.Println("Searched: ", f.checked.Load(), " Found: ", f.found.Load(), " in ", time.Now().Sub(start).Seconds(), " seconds")
 			return f.res, f.found.Load() >= uint32(limitFind)
 		default:
-			batch := conn.ReadBatch(900000, 9000000)
+			batch := conn.ReadBatch(minBytes, maxBytes)
 			for {
 				msg, err := batch.ReadMessage()
 				if err != nil {
