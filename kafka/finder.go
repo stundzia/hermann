@@ -3,7 +3,6 @@ package kafka
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,13 +42,11 @@ func newFinder(findLimit, searchLimit, containType int, containing [][]byte, tim
 }
 
 func (f *finder) statusChecker() {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(200 * time.Millisecond)
 	start := time.Now()
 
 	for {
 		<-ticker.C
-		fmt.Println("Found: ", f.found.Load())
-		fmt.Println("Checked: ", f.checked.Load())
 		if f.found.Load() >= f.limitFind || f.checked.Load() >= f.limitSearch || start.Add(time.Second*time.Duration(f.limitTimeSecs)).Before(time.Now()) {
 			f.cancel()
 			return

@@ -299,12 +299,13 @@ func (h *Handler) FindMessagesContainingV2(topic string, containing [][]byte, co
 			fmt.Println("Searched: ", f.checked.Load(), " Found: ", f.found.Load(), " in ", time.Now().Sub(start).Seconds(), " seconds")
 			return f.res, f.found.Load() >= uint32(limitFind)
 		default:
-			batch := conn.ReadBatch(minBytes, maxBytes)
+			batch := conn.ReadBatchWith(kafka.ReadBatchConfig{
+				MinBytes: minBytes,
+				MaxBytes: maxBytes,
+				MaxWait:  time.Second,
+			})
 			for {
 				msg, err := batch.ReadMessage()
-				if err != nil {
-					fmt.Println("err: ", err)
-				}
 				if batch.Err() != nil || err != nil || msg.Value == nil {
 					_ = batch.Close()
 					break
